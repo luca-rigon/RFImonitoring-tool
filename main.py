@@ -1,5 +1,4 @@
 import glob
-import os
 import re
 import argparse
 import time
@@ -11,14 +10,70 @@ import matplotlib.colors as colors
 import matplotlib.ticker as ticker
 from utils import *
 from load_map import load_map
+from read_logfile import return_frequencies_sx
 
 # Constants:
 observatory_coordinates = (11.2, 47.95, 11.9, 48.35)
 clip_min = 0
 clip_max = 3  
 
+# Here, change the split number if needed(e.g too much files exist for processing)
+split_num=160
+
+def sxL_IndexToChannel(i):
+    # Defined only for i==8 -> CH1 or i==9 -> CH8
+    # for correct plot labeling
+    if i == 8: return '1'
+    else: return '8'
+
 # Plots:
-def gnuplot(dataset, session, time, band):
+def sx_gnuplot(dataset, session, time, band_flags):
+    # Generate GNU-plot of one dataset, for a given session (S/X antenna)
+    # shape: variable, based on measured bands (4000 x (1+xxx))
+    # channel 0: frequencies (x-axis)
+    # channels 1-8: X bands, 1 & 8 are up- & low-polarized
+    # channels 9-14: S bands, up-polarized
+
+    count_voids = 0
+    low_pol = 0
+
+    plt.rcParams['lines.linestyle'] = '-'
+    plt.rcParams['lines.linewidth'] = 1.0
+    plt.rcParams['xtick.labelsize'] = 7
+    plt.rcParams['ytick.labelsize'] = 7  
+
+    fig = plt.figure(figsize=(9, 6))
+    fig.suptitle(f'Single scan plot, S/X Bands: session {session}, {time[0:4]}-{time[5:7]}-{time[8:10]} {time[11:]}')
+    for i in range(16):
+        ax = fig.add_subplot(4, 4, i+1)
+        if band_flags[i]:
+            if i < 10: band = 'X'
+            else: 
+                band = 'S'
+                low_pol = 2 
+            
+            if i==8 or i==9:
+                label = f"{band} "+sxL_IndexToChannel(i)+"l"    
+                ax.plot(dataset[::-1, 0], dataset[:, i+1-count_voids], label=label)             
+            else: 
+                label = f"{band} {i+1-low_pol}u"
+                ax.plot(dataset[:, 0], dataset[:, i+1-count_voids], label=label) 
+            ax.set_xlim(0.01, 7.99)
+            ax.set_ylim(0, 3)
+            plt.xticks(range(1, 8))
+            plt.text(0.85, 0.9, label, backgroundcolor='white', ha='center', va='center', transform=plt.gca().transAxes, fontsize=7)   
+
+        else:
+            count_voids += 1    
+            plt.tick_params(bottom=False, left=False, labelbottom=False, labelleft=False)
+    
+    plt.subplots_adjust(left=0.05, right=0.95, bottom=0.05, top=0.95, wspace=0.2, hspace=0.2)
+    # plt.savefig(f'{save_session_path(session)}/{session}_gnuplot_{timeformat_files(time)}.png')
+    plt.show()
+    # plt.close()
+
+
+def vgos_gnuplot(dataset, session, time, band):
     # Generate GNU-plot of one dataset, for a given session, time & spectral band
     # shape: (6400 x (1+16))
     # channel 0: frequencies (x-axis)
@@ -66,8 +121,6 @@ def spectra_plot(datasets_list, band, freq_vector, x_axis, times_label, method):
         for j in range(1, 17):
             all_channels_listed[i].append(datasets_list[i][:,j])
 
-    # Here, change the split number if needed(e.g too much files exist for processing)
-    split_num=160
     # Go through the 16 channels, add one full array(maximum/mean/median) into another, split, get the maximum/mean/median and add it to a spare array(maximums_2)
     for j in range(len(datasets_list)):
         values_list.append([])
@@ -266,8 +319,9 @@ def run_analysis(session, doy_beginning, end_indicator, spec, params, GNU_doy, m
     # Remove calibration signals when loading the dataset
     # Execute optional requests according to params - vector (GNU-plot, spectrograms, skyplot)
 
+    # TODO: make function compatible also for sx Antennas
     # Titles for the plots
-    band, freq_vector = return_band(spec)
+    band, freq_vector = return_frequencies_vgos(spec)
 
     # Prepare lists of datasets
     beginning = timeformat_files(doy_beginning)
@@ -325,7 +379,7 @@ def run_analysis(session, doy_beginning, end_indicator, spec, params, GNU_doy, m
             print(f' Plotting dataset at the time {GNU_doy}')
             GNU_time = timeformat_files(GNU_doy)
             gnu_index = files.index(f"{session}_ws_{GNU_time}_scansection_{spec}.spec")
-            gnuplot(datasets_list[gnu_index], session, GNU_doy, band)
+            vgos_gnuplot(datasets_list[gnu_index], session, GNU_doy, band)
         elif GNU_doy == 'all':
             # Plot all datasets
             print(f'Plotting all datasets for the selected timespan')
@@ -333,7 +387,7 @@ def run_analysis(session, doy_beginning, end_indicator, spec, params, GNU_doy, m
                 GNU_doy_i = datetime.datetime.strptime(year + "-" + interval[i][10:13], "%Y-%j").strftime("%Y.%m.%d")
                 GNU_doy_i += f'.{interval[i][14:16]}:{interval[i][16:18]}:00' 
                 print(GNU_doy_i)
-                gnuplot(dataset, session, GNU_doy_i, band)
+                vgos_gnuplot(dataset, session, GNU_doy_i, band)
         else:
             raise ValueError('-GNUplot argument wrong. Please use format YYYY.MM.DD.hh:mm:ss, or `all`')
         
@@ -354,7 +408,6 @@ def run_analysis(session, doy_beginning, end_indicator, spec, params, GNU_doy, m
 
 if __name__ =='__main__':
 
-    bands = ['0', '1', '2', '3']    # A, B, C, D
     GNUplot = False
     spectraplot = False
     skyplot = None
@@ -371,11 +424,13 @@ if __name__ =='__main__':
                     help="Start time for the session")
     ap.add_argument("-e", "--soperand", required=False,
                     help="End time for the session")
-    ap.add_argument("-session", "--toperand", required=True,
-                    help="Session information")
     ap.add_argument("-d", "--doperand", required=False,
                     help="Duration of session")
-    
+    ap.add_argument("-session", "--sessoperand", required=True,
+                    help="Session information")
+    ap.add_argument("-type", "--typeoperand", required=True,
+                    help="Antenna type: VGOS or S/X-Legacy")
+
 
     # Optional argument: Specify if the calibration signals are to be filtered out. Default=True
     ap.add_argument("-removeCal", "--caliboperand", required=False,
@@ -403,8 +458,9 @@ if __name__ =='__main__':
     args = vars(ap.parse_args())
     
 
-    session = args['toperand']
-    doy_beginning = args['foperand']    
+    session = args['sessoperand']
+    doy_beginning = args['foperand']
+    antenna_type = args['typeoperand']    # vgos or sx
 
     # Check the end indicator. Can be either the duration (-d) option or end option(-e).
     if(args['doperand'] is not None):
@@ -455,9 +511,23 @@ if __name__ =='__main__':
 
     start_time = time.time()
 
-    print(f'\nAnalysis for session {session}, start time: {doy_beginning}')
-    for i in range(len(bands)):
-       run_analysis(session, doy_beginning, end_indicator, bands[i], params, GNU_doy, method)
-    end_time = time.time()
+    if antenna_type == 'vgos':
+        print(f'\nAnalysis for session {session} (VGOS), start time: {doy_beginning}')
 
+        bands = ['0', '1', '2', '3']    # A, B, C, D
+        for i in range(len(bands)):
+            run_analysis(session, doy_beginning, end_indicator, bands[i], params, GNU_doy, method)
+
+    elif antenna_type == 'sx':
+        print(f'\nAnalysis for session {session} (S/X-Legacy), start time: {doy_beginning}')
+
+        path_to_session = f'Datasets/{session}/'
+        dataset = np.loadtxt(f'{path_to_session}{session}wz_spec.out')
+        freq_vector, band_flags = return_frequencies_sx(path_to_session+f'{session}wz.log')
+        sx_gnuplot(dataset, session, doy_beginning, band_flags)
+
+    else:
+        raise ValueError(f"{antenna_type} is not a valid antenna parameter for this analysis. Please use 'vgos', or 'sx' ")
+
+    end_time = time.time()
     print(f'\nAnalysis Done! Total duration: {round(end_time - start_time, 3)} s \n')

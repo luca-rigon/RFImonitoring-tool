@@ -29,7 +29,7 @@ def timeformat_files(date):
     return date_formatted
 
 
-def return_band(spec):
+def return_frequencies_vgos(spec):
     # Return frequency channels & their names for the chosen spectral band
     # Input - spec: value {0,1,2,3} which corresponds to the active spectral band
 
