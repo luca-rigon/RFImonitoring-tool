@@ -385,7 +385,7 @@ def run_vgos_analysis(session, doy_beginning, end_indicator, spec, params, GNU_d
     if (params[3] is not None):
         print(f' Plotting skyplot of the session...')
         start_id = interval[0][10:18]
-        azimuths, elevations = get_summary_for_session(session, start_id, len(datasets_list))
+        azimuths, elevations = get_summary_for_session(session, start_id, 'ws', len(datasets_list))
         channel = params[3]    # choose channel here: el.[1,16]
         clip_skyplot = params[4]
         sky_plot(azimuths, elevations, datasets_list, session, band, channel, times_label, freq_vector, method, clip_skyplot)

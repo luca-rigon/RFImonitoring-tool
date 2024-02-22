@@ -1,5 +1,7 @@
 import os
 import datetime
+import numpy as np
+import matplotlib.pyplot as plt
 
 
 def get_session_path(session):
@@ -90,29 +92,28 @@ def remove_peaks(sessionfile):
     return sessionfile_filtered
 
 
-def get_summary_for_session(session, start_id, length_of_list): 
+def get_summary_for_session(session, start_id, suffix, length_of_list): 
     # Extract relevant session information (timestamp, azimuth and elevation values) from the corresponding summary file, provided in the 'session_name_sum.txt' - format
     # Inputs: - session: active session_name
     #         - start_id: timestamp-id corresponding to the chosen start-time of the analysis 
     #         - length_of_list: number of registered points to be considered, according to session duration
 
-    with open(f'{get_session_path(session)}/{session}ws_sum.txt', 'r') as file:
+    with open(f'{get_session_path(session)}{session}{suffix}_sum.txt', 'r') as file:
         lines = file.readlines()
         timestamps = []
         azimuth_values = []
         elevation_values = []
         
-        for line in lines[14:]:     # Start line iteration onl after header
+        for line in lines[16:]:     # Start line iteration onl after header
             values = line.split()
-            
-            if len(values) >= 7:
+            if len(values) >= 9:
                 # Check if the line has enough columns
                 if values[3] != 'Az' and values[4] != 'El':
                     # Extract azimuth and elevation values
                     time = values[0]
                     azimuth = float(values[3])
                     elevation = float(values[4])
-                    timestamps.append(time)
+                    timestamps.append(time[:8])
                     azimuth_values.append(azimuth)
                     elevation_values.append(elevation)
 
@@ -120,3 +121,24 @@ def get_summary_for_session(session, start_id, length_of_list):
     start_index = timestamps.index(start_id)
     end_index = start_index + length_of_list
     return azimuth_values[start_index:end_index], elevation_values[start_index:end_index]
+
+
+def polar_plot(session, theta, R, values, az_max_ch, el_max_ch, plot_title, times_label, band, channel_label, method, clip_label, figsave=True):
+    # Create a polar plot
+    fig = plt.figure(figsize=(8, 8))
+    ax = fig.add_subplot(111, projection='polar')
+    cax = ax.contourf(theta, R, values.T, cmap='jet')
+    ax.annotate('', (az_max_ch, el_max_ch), xytext=(0,0), arrowprops=dict(facecolor='red')) # Draw arrow towards highest disturbance onto plot
+    ax.grid(False)
+    ax.set_yticklabels([]) #remove yticklabels
+    ax.set_theta_zero_location('N')
+    ax.set_theta_direction(-1)
+    ax.set_xticks([0, np.pi/4, np.pi/2, 3*np.pi/4, np.pi, 5*np.pi/4, 3*np.pi/2, 7*np.pi/4])
+    ax.set_xticklabels(['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'])
+    fig.colorbar(cax)
+    fig.suptitle(plot_title)
+    if figsave: 
+        plt.savefig(f'{save_session_path(session)}/{session}_skyplot_{times_label}{band}{channel_label}_{method}{clip_label}.png', dpi=300)
+        plt.close()
+    else:
+        plt.show()

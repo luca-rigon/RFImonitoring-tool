@@ -190,94 +190,145 @@ def sx_spectra_plot(datasets_list, session, band_flags, freq_vector, x_axis, tim
         plt.close()
 
 
-# def sx_sky_plot(azimuths, elevations, datasets_list, channel_param, times_label, band_flags, freq_vector, method, clip_skyplot):
-#     # Visualize skyplot of the datasets_list - files for given channel and corresponding lists of azimuth and elevation data
-#     # Inputs: - channel_param: channel chosen for visualization. Can be either a specific one, or 'all' of them
-#     #         - times_label: session duration, as label for title
-#     #         - band_flags: list of flags representing channel allocations
-#     #         - freq_vector: list of frequency ranges within the band, in the required format for plotting
-#     #         - method: statistical method to apply on data. Default: np.max()
-#     #         - clip_skyplot: wheter to clip the measurements onto a specific range or not
+def sx_sky_plot(session, azimuths, elevations, datasets_list, channel_param, times_label, band_flags, freq_vector, method, clip_skyplot):
+    # Visualize skyplot of the datasets_list - files for given channel and corresponding lists of azimuth and elevation data
+    # Inputs: - channel_param: channel chosen for visualization. Can be either a specific one, or 'all' of them
+    #         - times_label: session duration, as label for title
+    #         - band_flags: list of flags representing channel allocations
+    #         - freq_vector: list of frequency ranges within the band, in the required format for plotting
+    #         - method: statistical method to apply on data. Default: np.max()
+    #         - clip_skyplot: wheter to clip the measurements onto a specific range or not
 
-#     n_samples = len(datasets_list)
-#     method_func = getattr(np, method)       # Define function np.max(), np.mean(), np.median()
-#     # Compute max/mean/median for all frequencies:
-#     number_channels = len([x for _, x in enumerate(band_flags) if x!=0])
-#     values_channels_all = np.zeros((number_channels,n_samples))
-#     for ch in range(number_channels-1):
-#         for i in range(n_samples):
-#             values_channels_all[ch,i] = method_func(datasets_list[i][:,ch+1])
+    n_samples = len(datasets_list)
+    method_func = getattr(np, method)       # Define function np.max(), np.mean(), np.median()
+    # Compute max/mean/median for all frequencies:
+    number_channels = len([x for _, x in enumerate(band_flags) if x!=0])
+    values_channels_all = np.zeros((number_channels,n_samples))
+    for ch in range(number_channels):
+        for i in range(n_samples):
+            values_channels_all[ch,i] = method_func(datasets_list[i][:,ch+1])
     
-#     clip_label = ''
-#     if clip_skyplot == True:    
-#         values_channels_all = np.clip(values_channels_all, a_min=clip_min, a_max=clip_max)
-#         clip_label = '_clipped'
+    clip_label = ''
+    if clip_skyplot == True:    
+        values_channels_all = np.clip(values_channels_all, a_min=clip_min, a_max=clip_max)
+        clip_label = '_clipped'
 
-#     # Get the direction of the highest disturbance (i.e. get index for highest values):
-#     disturbance_index = np.unravel_index(np.argmax(values_channels_all, axis=None), (number_channels,n_samples))
-#     az_max = np.radians(azimuths[disturbance_index[1]])
-#     el_max = elevations[disturbance_index[1]]
-#     print(f' Highest disturbance {values_channels_all.max()} at ({azimuths[disturbance_index[1]]}, {elevations[disturbance_index[1]]}) - frequency channel {disturbance_index[0]+1}: {freq_vector[disturbance_index[0]%8][1]} - {freq_vector[disturbance_index[0]%8+1][0]}')
+    # define binning
+    abins = np.linspace(0,2*np.pi, 60)     # azimuth - angle; 1/6
+    rbins = np.linspace(0,90, 31)   # elevation - radius; 1/3
+    theta, R = np.meshgrid(abins, rbins)
 
-#     # define binning
-#     abins = np.linspace(0,2*np.pi, 60)     # azimuth - angle; 1/6
-#     rbins = np.linspace(0,90, 31)   # elevation - radius; 1/3
-#     theta, R = np.meshgrid(abins, rbins)
-    
-#     if channel_param == 'all':
-#         channel_list = list(range(1, number_channels+2))       # Analyze all channels + return highest values over all
-#     else:
-#         channel_list = [int(channel_param)]          # Analyze only one channel
+    lower_count = 0         
+    if band_flags[-1] != 2 and band_flags[8] == 1: lower_count = 2      # lower band allocations
+    x_count = 0
+    s_count = 0
 
-#     for channel in channel_list:
-#         # Initialize zero array and put the values at the provided Az & El indices, scaled onto the corresponding ranges (binning), for the selected channel:
+    for i in range(16):
+            if band_flags[i]:
+                if i < 8:
+                    x_count += 1
+                else: 
+                    if lower_count == 2 and i==14: break
+                    s_count += 1
+
+    # Get the direction of the highest disturbance (i.e. get index for highest values):
+    disturbance_index = np.unravel_index(np.argmax(values_channels_all, axis=None), (number_channels,n_samples))
+    az_max = np.radians(azimuths[disturbance_index[1]])
+    el_max = elevations[disturbance_index[1]]
+    print(f' Highest disturbance {values_channels_all.max()} at ({azimuths[disturbance_index[1]]}, {elevations[disturbance_index[1]]}) - frequency channel {disturbance_index[0]+1}: {freq_vector[disturbance_index[0]-lower_count][1]} - {freq_vector[disturbance_index[0]-lower_count+1][0]}')
+
+    if channel_param == 'per_band':
+        X_values = np.zeros(n_samples)
+        S_values = np.zeros(n_samples)
+        lower_values = np.zeros(n_samples)
+
+        for i in range(n_samples):
+            X_values[i] = method_func(values_channels_all[:x_count,i])               # Get max/mean/median over all channels for each sample
+            S_values[i] = method_func(values_channels_all[x_count+lower_count:,i])       
+            if lower_count == 2: lower_values[i] = method_func(values_channels_all[x_count:x_count+2,i])
+
+        vals_per_band = [X_values, S_values]
+        title_labels = ['X-bands, upper polarization', 'S-bands, upper polarization', 'X-bands, lower polarization']
+        title_freqs = [f'{freq_vector[0][1]} - {freq_vector[x_count][0]}', f'{freq_vector[x_count][1]} - {freq_vector[x_count+s_count][0]}', f'{freq_vector[x_count-1][1]} - {freq_vector[1][0]}']  # NOT correct; remove completely?
+        band_labels = ['Xu', 'Su', 'Xl']
+        if lower_count == 2: vals_per_band.append(lower_values)      
+
+        for bnd, band_values in enumerate(vals_per_band):
+
+            values = np.zeros((len(abins), len(rbins)))
+            for i in range(n_samples):
+                az_index = int(round(azimuths[i]/6)) 
+                el_index = int(round(elevations[i]/3)) 
+                if az_index == 60: az_index = 0      # close circle
+                # Only consider the highest value at each position:
+                if band_values[i] > values[az_index, el_index]:
+                    values[az_index, el_index] = band_values[i]
+
+            # Get the directions towards the highest value for the chosen channel:
+            max_index = np.unravel_index(np.argmax(values, axis=None), values.shape)
+            az_max_bnd = np.radians(max_index[0]*6 + 3)
+            el_max_bnd = max_index[1]*3 #+ 2
+            
+            plot_title = f'Skyplot for {session}, {title_labels[bnd]}: \n {title_freqs[bnd]} MHz'
+            polar_plot(session, theta, R, values, az_max_bnd, el_max_bnd, plot_title, times_label, '_bands_'+band_labels[bnd], '', method, clip_label, figsave=False)
+
+    elif channel_param == 'all':
         
-#         if channel == 17:
-#             channel_label = 'all'
-#             channel_values = np.zeros(n_samples)
-#             for i in range(n_samples):
-#                 channel_values[i] = method_func(values_channels_all[:,i])       # Get max/mean/median over all channels for each sample
-#         else:
-#             channel_label = 'CH'+str(channel)
-#             channel_values = values_channels_all[channel-1, :]
-    
-#         values = np.zeros((len(abins), len(rbins)))
-#         for i in range(n_samples):
-#             az_index = int(round(azimuths[i]/6)) 
-#             el_index = int(round(elevations[i]/3)) 
-#             if az_index == 60: az_index = 0      # close circle
-#             # Only consider the highest value at each position:
-#             if channel_values[i] > values[az_index, el_index]:
-#                 values[az_index, el_index] = channel_values[i]
+        channel_list = np.arange(1, number_channels+2)       # Analyze all channels + return highest values over all
+        ch_last = channel_list[-1]
+        channel_state = 1
+            
+        for channel in channel_list:
+            # Initialize zero array and put the values at the provided Az & El indices, scaled onto the corresponding ranges (binning), for the selected channel:
 
-#         # Get the directions towards the highest value for the chosen channel:
-#         max_index = np.unravel_index(np.argmax(values, axis=None), values.shape)
-#         az_max_ch = np.radians(max_index[0]*6 + 3)
-#         el_max_ch = max_index[1]*3 #+ 2
+            plot_title = ''
 
-#         # Title of plot
-#         if channel < 9:
-#             plot_title = f'Skyplot for {session}, Band {band}, \n {freq_vector[channel-1][1]} - {freq_vector[channel][0]} MHz (H-pol)'
-#         elif channel < 17:
-#             plot_title = f'Skyplot for {session}, Band {band}, \n {freq_vector[channel-9][1]} - {freq_vector[channel-8][0]} MHz (V-pol)'  
-#         else: 
-#             plot_title = f'Skyplot for {session}, Band {band}, \n Over all frequencies ({freq_vector[0][1]} - {freq_vector[8][0]} MHz)'
+            if channel == ch_last:
+                ch_label = 'all'
+                plot_title = f'Skyplot for {session}, over all frequencies (S and X bands): \n {freq_vector[x_count][1]} - {freq_vector[x_count][0]} MHz'
+                channel_values = np.zeros(n_samples)
+                for i in range(n_samples):
+                    channel_values[i] = method_func(values_channels_all[:,i])       # Get max/mean/median over all channels for each sample
+            else:
+                # Adjust band labels:
+                k = channel_state-1
+                while band_flags[k] == 0: 
+                    channel_state += 1
+                    k += 1
+                
+                if channel_state < 9: 
+                    ch_label = f'X-{channel_state}u'
+                    freq_interval = f'{freq_vector[channel-1][1]} - {freq_vector[channel][0]}'
+                elif lower_count == 2 and channel_state < 11: 
+                    ch_label = f'X-{sxL_IndexToChannel(channel_state-1)}l'
+                    if channel_state == 9: freq_interval = f'{freq_vector[0][1]} - {freq_vector[1][0]}'
+                    if channel_state == 10: freq_interval = f'{freq_vector[x_count-1][1]} - {freq_vector[x_count][0]}'
+                else: 
+                    ch_label = f'S-{channel_state-2}u'
+                    freq_interval = f'{freq_vector[channel-lower_count-1][1]} - {freq_vector[channel-lower_count][0]}'
 
-#         # Create a polar plot
-#         fig = plt.figure(figsize=(8, 8))
-#         ax = fig.add_subplot(111, projection='polar')
-#         cax = ax.contourf(theta, R, values.T, cmap='jet')
-#         ax.annotate('', (az_max_ch, el_max_ch), xytext=(0,0), arrowprops=dict(facecolor='red')) # Draw arrow towards highest disturbance onto plot
-#         ax.grid(False)
-#         ax.set_yticklabels([]) #remove yticklabels
-#         ax.set_theta_zero_location('N')
-#         ax.set_theta_direction(-1)
-#         ax.set_xticks([0, np.pi/4, np.pi/2, 3*np.pi/4, np.pi, 5*np.pi/4, 3*np.pi/2, 7*np.pi/4])
-#         ax.set_xticklabels(['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'])
-#         fig.colorbar(cax)
-#         fig.suptitle(plot_title)
-#         plt.savefig(f'{save_session_path(session)}/{session}_skyplot_{times_label}_{band}_{channel_label}_{method}{clip_label}.png', dpi=300)
-#         plt.close()
+                channel_state += 1
+                plot_title = f'Skyplot for {session}, channel {ch_label}: \n {freq_interval} MHz'
+                channel_values = values_channels_all[channel-1, :]
+        
+            values = np.zeros((len(abins), len(rbins)))
+            for i in range(n_samples):
+                az_index = int(round(azimuths[i]/6)) 
+                el_index = int(round(elevations[i]/3)) 
+                if az_index == 60: az_index = 0      # close circle
+                # Only consider the highest value at each position:
+                if channel_values[i] > values[az_index, el_index]:
+                    values[az_index, el_index] = channel_values[i]
+
+            # Get the directions towards the highest value for the chosen channel:
+            max_index = np.unravel_index(np.argmax(values, axis=None), values.shape)
+            az_max_ch = np.radians(max_index[0]*6 + 3)
+            el_max_ch = max_index[1]*3 #+ 2
+
+            polar_plot(session, theta, R, values, az_max_ch, el_max_ch, plot_title, times_label, '', '_'+ch_label, method, clip_label, figsave=False)
+
+    else:
+        raise ValueError(f"{channel_param} is not a valid input parameter for the S/X skyplots. Please use 'per_band' or 'all'")
 
     # load_map(observatory_coordinates, az_max, el_max)
    
@@ -316,7 +367,6 @@ def run_sx_analysis(session, doy_beginning, end_indicator, params, GNU_doy, meth
     # Remove calibration signals when loading the dataset
     # Execute optional requests according to params - vector (GNU-plot, spectrograms, skyplot)
 
-    # TODO: make function compatible also for sx Antennas
     files_path = get_session_path(session)
     
     # Titles for the plots
@@ -343,6 +393,7 @@ def run_sx_analysis(session, doy_beginning, end_indicator, params, GNU_doy, meth
     
     # Shrink the list according to the user input
     interval = list(h for h in files if session[0:6]+'_wz_'+beginning+'_spec.out' <= h <= session[0:6]+'_wz_'+end+'_spec.out')
+    if interval == []: raise ValueError('No data found for the selected date. Please input a valid timestamp for this session')
    
    # Format x-axis label s.t. it can be readable in the plot (max 50 at regular steps):
     year = str(doy_beginning)[0:4]
@@ -393,10 +444,7 @@ def run_sx_analysis(session, doy_beginning, end_indicator, params, GNU_doy, meth
     if (params[3] is not None):
         print(f' Plotting skyplot of the session...')
         start_id = interval[0][10:18]
-        azimuths, elevations = get_summary_for_session(session, start_id, len(datasets_list))
+        azimuths, elevations = get_summary_for_session(session, start_id, 'wz', len(datasets_list))
         channel = params[3]    # choose channel here: el.[1,16]
         clip_skyplot = params[4]
-        # sx_sky_plot(azimuths, elevations, datasets_list, channel, times_label, band_flags, freq_vector, method, clip_skyplot)
-
-
-# run_sx_analysis('q24034', '2024.02.03.07:30:00', None, [True, True], 'all', 'max')
+        sx_sky_plot(session, azimuths, elevations, datasets_list, channel, times_label, band_flags, freq_vector, method, clip_skyplot)
