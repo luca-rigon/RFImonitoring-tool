@@ -25,7 +25,21 @@ def timeformat_files(date):
     format = "%Y.%m.%d.%H:%M:%S"    
     dt = datetime.datetime.strptime(date, format)
     tt = dt.timetuple()
-    date_formatted = str(tt.tm_yday)+'-'+date[11:13]+date[14:16]
+
+    # Control the given day & hour format to prevent type errors
+    day = str(tt.tm_yday)
+    hours = str(tt.tm_hour)    
+    mins = str(tt.tm_min)
+    if tt.tm_yday<10:
+        day = '00'+day
+    elif tt.tm_yday<100:
+        day = '0'+day
+    if tt.tm_hour<10:
+        hours='0'+hours
+    if tt.tm_min<10:
+        mins='0'+mins
+
+    date_formatted = day+'-'+hours+mins
     return date_formatted
 
 
