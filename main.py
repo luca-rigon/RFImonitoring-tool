@@ -2,19 +2,20 @@ import argparse
 import time
 import datetime
 from datetime import timedelta
-from utils import *
-from load_map import load_map
+from utils import timeformat_files
 from run_sx_analysis import run_sx_analysis
 from run_vgos_analysis import run_vgos_analysis
 
 if __name__ =='__main__':
 
     GNUplot = False
+    GNU_doy = None
     spectraplot = False
     skyplot = None
     filter_calibration = True
     method = 'max'
     clip_skyplot = False
+    clip_range = None
 
     # Construct the argument parser
     ap = argparse.ArgumentParser()
@@ -32,32 +33,30 @@ if __name__ =='__main__':
     ap.add_argument("-type", "--typeoperand", required=True,
                     help="Antenna type: VGOS or S/X-Legacy")
 
-
     # Optional argument: Specify if the calibration signals are to be filtered out. Default=True
     ap.add_argument("-removeCal", "--caliboperand", required=False,
-                    help="Visualize spectral data for one session file, for given input times")
+                    help="Keep calibration signals")
     
     # Optional argument: Specify the method for evaluating signal outliers; can be 'max', 'mean', 'median'. Default='max'
     ap.add_argument("-method", "--methodoperand", required=False,
-                    help="Analysis method")
+                    help="Analysis method (max/mean/median)")
 
     # Optional argument: Visualize spectral data for a single session time, or all of them. Input has to be datetime-format/'all'
     ap.add_argument("-GNUplot", "--gnuoperand", required=False,
-                    help="Visualize spectral data for one session file, for given input times")
+                    help="Visualize spectral data of one session file, for given input times")
     
     # Optional argument: Visualize spectrogram of session. Only valid/true for input = 1 
     ap.add_argument("-spectrogram", "--spectroperand", required=False,
-                    help="activate spectrogram-plots")
+                    help="Activate spectrogram-plots")
     
-    # Optional argument: Create skyplot for session. Only valid/true for input = 1-16 or 'all', requesting the corresponding channel
+    # Optional argument: Create skyplot for session. Only valid/true for input = 1-16 or 'all'/'per_band'/'per_channel', requesting the corresponding channel
     ap.add_argument("-skyplot", "--skyoperand", required=False,
-                    help="activate skyplot")
+                    help="Activate skyplot and select how to visualize it")
 
-    # Optional argument: Clip skyplot data. Only valid/true for input = 1, default: False
+    # Optional argument: Clip skyplot data. Only valid/true for 'x:x' (x: int/float), default: No clipping
     ap.add_argument("-sky_clip", "--clipoperand", required=False,
-                    help="activate skyplot")
+                    help="Clip skyplot onto a certain range")
     args = vars(ap.parse_args())
-    
 
     session = args['sessoperand']
     doy_beginning = args['foperand']
@@ -89,40 +88,31 @@ if __name__ =='__main__':
     else: end_indicator = None                       
 
     # Check optional arguments:
-    GNU_doy = None
+    if(args['spectroperand'] == '1'): spectraplot = True
+    if(args['skyoperand'] is not None): skyplot = args['skyoperand']
+    if(args['caliboperand'] == '0'): filter_calibration = False
+    if(args['methodoperand'] is not None): method = args['methodoperand']
     if(args['gnuoperand'] is not None):
         GNUplot = True
         GNU_doy = args['gnuoperand']
-    if(args['spectroperand'] == '1'):
-        spectraplot = True
-    if(args['skyoperand'] is not None):
-        skyplot = args['skyoperand']
-
-    if(args['caliboperand'] == '0'):
-        filter_calibration = False
-
-    if(args['methodoperand'] is not None):
-        method = args['methodoperand']
-
-    if(args['clipoperand'] == '1'):
+    if(args['clipoperand'] is not None):
+        clips = args['clipoperand'].rsplit(':')
         clip_skyplot = True
-        print('clip on')
+        clip_range = [int(clips[0]), int(clips[1])]
     
-    params = [filter_calibration, GNUplot, spectraplot, skyplot, clip_skyplot]
+    settings = [filter_calibration, GNUplot, spectraplot, skyplot]
+    add_params = [GNU_doy, clip_range]
 
     start_time = time.time()
-
     if antenna_type == 'vgos':
         print(f'\nAnalysis for session {session} (VGOS), start time: {doy_beginning}')
-
         bands = ['0', '1', '2', '3']    # A, B, C, D
         for i in range(len(bands)):
-            run_vgos_analysis(session, doy_beginning, end_indicator, bands[i], params, GNU_doy, method)
+            run_vgos_analysis(session, doy_beginning, end_indicator, bands[i], settings, add_params, method)
 
     elif antenna_type == 'sx':
-        print(f'\nAnalysis for session {session} (S/X-Legacy), start time: {doy_beginning}')
-        
-        run_sx_analysis(session, doy_beginning, end_indicator, params, GNU_doy, method)
+        print(f'\nAnalysis for session {session} (S/X-Legacy), start time: {doy_beginning}') 
+        run_sx_analysis(session, doy_beginning, end_indicator, settings, add_params, method)
 
     else:
         raise ValueError(f"{antenna_type} is not a valid antenna parameter for this analysis. Please use 'vgos', or 'sx' ")

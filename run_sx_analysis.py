@@ -6,30 +6,23 @@ import matplotlib.pyplot as plt
 import matplotlib.colors as colors
 import matplotlib.ticker as ticker
 from utils import *
-from load_map import load_map
 from read_logfile import return_frequencies_sx
 
 # Constants:
-observatory_coordinates = (11.2, 47.95, 11.9, 48.35)
-clip_min = 0
-clip_max = 3  
-
+observatory_location = 'Wettzell, Bad Kotzting'
 # Here, change the split number if needed(e.g too much files exist for processing)
 split_num=160
 
-def sxL_IndexToChannel(i):
-    # Defined only for i==8 -> CH1 or i==9 -> CH8
-    # for correct plot labeling
-    if i == 8: return '1'
-    else: return '8'
-
 # Plots:
-def sx_gnuplot(dataset, session, time, band_flags):
-    # Generate GNU-plot of one dataset, for a given session (S/X antenna)
-    # shape: variable, based on measured bands (4000 x (1+xxx))
+def sx_gnuplot(dataset, session, time, band_flags, figsave=True):
+    # Generate GNU-plot of one dataset, for a given session (Legacy S/X)
+    # shape: variable, based on nr. of channel allocations (4000 x (1+xxx))
+    # When all channels are used:
     # channel 0: frequencies (x-axis)
-    # channels 1-8: X bands, 1 & 8 are up- & low-polarized
-    # channels 9-14: S bands, up-polarized
+    # channels 1-8: X bands, upper
+    # channels 9-10 X bands, lower (1&8)
+    # channels 11-16: S bands, upper (channel name shifted down by 2: 9-14)
+    # If no lower bands allocated: S bands from 9-16
 
     count_voids = 0
     low_pol = 0
@@ -41,16 +34,15 @@ def sx_gnuplot(dataset, session, time, band_flags):
 
     fig = plt.figure(figsize=(9, 6))
     fig.suptitle(f'Single scan plot, S/X Bands: session {session}, {time[0:4]}-{time[5:7]}-{time[8:10]} {time[11:]}')
-
     if band_flags[-1] == 2:  # BBC15 & BBC16 allocation
         for i in range(16):
             ax = fig.add_subplot(4, 4, i+1)
+
             if band_flags[i]:
                 if i < 8: band = 'X'
-                else: 
-                    band = 'S'
-
+                else:     band = 'S'
                 label = f"{band} {i+1}u"
+
                 ax.plot(dataset[:, 0], dataset[:, i+1-count_voids], label=label) 
                 ax.set_xlim(0.01, 7.99)
                 ax.set_ylim(0, 3)
@@ -60,22 +52,23 @@ def sx_gnuplot(dataset, session, time, band_flags):
             else:
                 count_voids += 1    
                 plt.tick_params(bottom=False, left=False, labelbottom=False, labelleft=False)
-
+    
     else:                   # allocate lower bands
         for i in range(16):
             ax = fig.add_subplot(4, 4, i+1)
+
             if band_flags[i]:
                 if i < 10: band = 'X'
                 else: 
                     band = 'S'
-                    low_pol = 2 
-                
+                    low_pol = 2  
                 if i==8 or i==9:
                     label = f"{band} "+sxL_IndexToChannel(i)+"l"    
                     ax.plot(dataset[::-1, 0], dataset[:, i+1-count_voids], label=label)             
                 else: 
                     label = f"{band} {i+1-low_pol}u"
                     ax.plot(dataset[:, 0], dataset[:, i+1-count_voids], label=label) 
+
                 ax.set_xlim(0.01, 7.99)
                 ax.set_ylim(0, 3)
                 plt.xticks(range(1, 8))
@@ -86,13 +79,16 @@ def sx_gnuplot(dataset, session, time, band_flags):
                 plt.tick_params(bottom=False, left=False, labelbottom=False, labelleft=False)
         
     plt.subplots_adjust(left=0.05, right=0.95, bottom=0.05, top=0.95, wspace=0.2, hspace=0.2)
-    plt.savefig(f'{save_session_path(session)}/{session}_gnuplot_cal_{timeformat_files(time)}.png')
-    plt.close()
+    if figsave:
+        plt.savefig(f'{save_session_path(session)}/{session}_gnuplot_cal_{timeformat_files(time)}.png')
+        plt.close()
+    else:
+        plt.show()
 
-def sx_spectra_plot(datasets_list, session, band_flags, freq_vector, x_axis, times_label, method):
-    # Plot spectrograms for a given session over all selected datasets, listed in datasets_list, for all frequencies
+def sx_spectra_plot(datasets_list, session, band_flags, freq_vector, x_axis, times_label, method, figsave=True):
+    # Plot spectrograms for a given session over all selected datasets, listed in datasets_list, for all found frequencies
     # Inputs: - band_flags: list of flags representing channel allocations
-    #         - freq_vector: list of frequency ranges within the band, in the required format for plotting
+    #         - freq_vector: list of frequency ranges for allocated channels, in the required format for plotting
     #         - x_axis: x-axis label, in the required format for plotting
     #         - times_label: session duration, as label for title
     #         - method: statistical method to apply on data. Default: np.max()
@@ -101,6 +97,10 @@ def sx_spectra_plot(datasets_list, session, band_flags, freq_vector, x_axis, tim
     all_channels_listed = []
     values_list = [] 
     number_channels = len([x for _, x in enumerate(band_flags) if x!=0])
+
+    clip_min = 0
+    clip_max = 3  
+
     # Append each columns of the dataset to each other, excluding the x-axis
     for i in range(len(datasets_list)):
         all_channels_listed.append([])
@@ -147,15 +147,14 @@ def sx_spectra_plot(datasets_list, session, band_flags, freq_vector, x_axis, tim
 
     Xband_concatenated = np.concatenate(Xband_channels, axis=0)
     Sband_concatenated = np.concatenate(Sband_channels, axis=0)
-
     band_counts = [x_count, s_count]
     all_channels = [Xband_concatenated, Sband_concatenated]
-    # Normalize the data for colorbar
-    norm = colors.Normalize(vmin=clip_min, vmax=clip_max)
 
-    freq_vector = freq_vector[:x_count] + [(freq_vector[x_count][0], '')] + [('', freq_vector[x_count][1])] + freq_vector[x_count+1:]
+    norm = colors.Normalize(vmin=clip_min, vmax=clip_max) # Normalize the data for colorbar
 
-    # generate 2 Figures: X & S     TODO fix labels
+    freq_vector = freq_vector[:x_count] + [(freq_vector[x_count][0], '')] + [('', freq_vector[x_count][1])] + freq_vector[x_count+1:] # Format for plotting
+
+    # generate 2 Figures: X & S
     for bnd in range(2):
         band_channels = all_channels[bnd]
         
@@ -181,42 +180,44 @@ def sx_spectra_plot(datasets_list, session, band_flags, freq_vector, x_axis, tim
             ax_i.set_xticks(np.arange(len(datasets_list))+0.5)
             ax_i.set_xticklabels(x_axis, rotation=90, fontsize=5)
 
-        axs[(band_counts[bnd]-1)//2].set_ylabel('MHz')  
+        axs[(band_counts[bnd]-1)//2].set_ylabel('MHz')  # Put ylabel at ab. the middle of the axis
         plt.xlabel('Timestamps')
-        cax = fig.add_axes([0.92, 0.1, 0.02, 0.8])    # - Create a shared colorbar      
+        cax = fig.add_axes([0.92, 0.1, 0.02, 0.8])    # Create a shared colorbar      
         plt.colorbar(ci, cax=cax)
         fig.suptitle(f'Session {session}, {titles[bnd]}, upper polarization')
-        plt.savefig(f'{save_session_path(session)}/{session}_spectraplot_{times_label}_{titles[bnd]}_{method}.png', bbox_inches='tight', dpi=300)
-        plt.close()
+        if figsave:
+            plt.savefig(f'{save_session_path(session)}/{session}_spectraplot_{times_label}_{titles[bnd]}_{method}.png', bbox_inches='tight', dpi=300)
+            plt.close()
+        else:
+            plt.show()
 
 
-def sx_sky_plot(session, azimuths, elevations, datasets_list, channel_param, times_label, band_flags, freq_vector, method, clip_skyplot):
-    # Visualize skyplot of the datasets_list - files for given channel and corresponding lists of azimuth and elevation data
-    # Inputs: - channel_param: channel chosen for visualization. Can be either a specific one, or 'all' of them
+def sx_sky_plot(session, azimuths, elevations, datasets_list, channel_param, times_label, band_flags, freq_vector, method, clip_range, obs_map=False, figsave=True):
+    # Visualize skyplot of the datasets_list - files for given channels and corresponding lists of azimuth and elevation data
+    # Inputs: - channel_param: skyplot type chosen for visualization. Can be either 'per_channel', 'per_band' to split them into bands (Xu,Su,Xl) or 'all' for all taken together
     #         - times_label: session duration, as label for title
     #         - band_flags: list of flags representing channel allocations
     #         - freq_vector: list of frequency ranges within the band, in the required format for plotting
     #         - method: statistical method to apply on data. Default: np.max()
     #         - clip_skyplot: wheter to clip the measurements onto a specific range or not
+    #         - obs_map: additional parameter, if the main disturbances are to be shown on the map for a given location (Set parameter on top)
 
+    number_channels = len([x for _, x in enumerate(band_flags) if x!=0])
     n_samples = len(datasets_list)
     method_func = getattr(np, method)       # Define function np.max(), np.mean(), np.median()
+    
+    # Clipping settings:
+    clipping = False
+    clip_min, clip_max = [0,1000]
+    if (clip_range is not None):
+        clip_min, clip_max = clip_range    
+        clipping = True
+
     # Compute max/mean/median for all frequencies:
-    number_channels = len([x for _, x in enumerate(band_flags) if x!=0])
     values_channels_all = np.zeros((number_channels,n_samples))
     for ch in range(number_channels):
         for i in range(n_samples):
             values_channels_all[ch,i] = method_func(datasets_list[i][:,ch+1])
-    
-    clip_label = ''
-    if clip_skyplot == True:    
-        values_channels_all = np.clip(values_channels_all, a_min=clip_min, a_max=clip_max)
-        clip_label = '_clipped'
-
-    # define binning
-    abins = np.linspace(0,2*np.pi, 60)     # azimuth - angle; 1/6
-    rbins = np.linspace(0,90, 31)   # elevation - radius; 1/3
-    theta, R = np.meshgrid(abins, rbins)
 
     lower_count = 0         
     if band_flags[-1] != 2 and band_flags[8] == 1: lower_count = 2      # lower band allocations
@@ -225,19 +226,36 @@ def sx_sky_plot(session, azimuths, elevations, datasets_list, channel_param, tim
 
     for i in range(16):
             if band_flags[i]:
-                if i < 8:
-                    x_count += 1
+                if i < 8: x_count += 1
                 else: 
                     if lower_count == 2 and i==14: break
                     s_count += 1
 
-    # Get the direction of the highest disturbance (i.e. get index for highest values):
+    # Get the direction of the highest disturbances (i.e. get indices for highest values):
     disturbance_index = np.unravel_index(np.argmax(values_channels_all, axis=None), (number_channels,n_samples))
     az_max = np.radians(azimuths[disturbance_index[1]])
     el_max = elevations[disturbance_index[1]]
     print(f' Highest disturbance {values_channels_all.max()} at ({azimuths[disturbance_index[1]]}, {elevations[disturbance_index[1]]}) - frequency channel {disturbance_index[0]+1}: {freq_vector[disturbance_index[0]-lower_count][1]} - {freq_vector[disturbance_index[0]-lower_count+1][0]}')
 
-    if channel_param == 'per_band':
+    # define binning
+    abins = np.linspace(0,2*np.pi, 60)     # azimuth - angle; 1/6
+    rbins = np.linspace(0,90, 31)          # elevation - radius; 1/3
+    theta, R = np.meshgrid(abins, rbins)
+
+    if 'all' in channel_param:
+        # Run analysis over all channels
+        channel_values = np.zeros(n_samples)
+        for i in range(n_samples):
+            channel_values[i] = method_func(values_channels_all[:,i])       # Get max/mean/median over all channels for each sample
+        values, az_max_ch, el_max_ch = return_polar_values(azimuths, elevations, abins, rbins, channel_values)
+        if clipping: values = np.clip(values, a_min=clip_min, a_max=clip_max)
+
+        plot_title = f'Skyplot for {session}, over all frequencies (S and X bands): \n {freq_vector[x_count][1]} - {freq_vector[x_count][0]} MHz'
+        polar_plot(session, theta, R, values, az_max_ch, el_max_ch, plot_title, times_label, '', '_all', method, clip_range, figsave=figsave)
+
+    
+    if 'per_band' in channel_param:
+        # Run analysis over whole X/S band, lower/upper
         X_values = np.zeros(n_samples)
         S_values = np.zeros(n_samples)
         lower_values = np.zeros(n_samples)
@@ -254,126 +272,64 @@ def sx_sky_plot(session, azimuths, elevations, datasets_list, channel_param, tim
         if lower_count == 2: vals_per_band.append(lower_values)      
 
         for bnd, band_values in enumerate(vals_per_band):
-
-            values = np.zeros((len(abins), len(rbins)))
-            for i in range(n_samples):
-                az_index = int(round(azimuths[i]/6)) 
-                el_index = int(round(elevations[i]/3)) 
-                if az_index == 60: az_index = 0      # close circle
-                # Only consider the highest value at each position:
-                if band_values[i] > values[az_index, el_index]:
-                    values[az_index, el_index] = band_values[i]
-
-            # Get the directions towards the highest value for the chosen channel:
-            max_index = np.unravel_index(np.argmax(values, axis=None), values.shape)
-            az_max_bnd = np.radians(max_index[0]*6 + 3)
-            el_max_bnd = max_index[1]*3 #+ 2
+            values, az_max_bnd, el_max_bnd = return_polar_values(azimuths, elevations, abins, rbins, band_values)
+            if clipping: values = np.clip(values, a_min=clip_min, a_max=clip_max)
             
             plot_title = f'Skyplot for {session}, {title_labels[bnd]}: \n {title_freqs[bnd]} MHz'
-            polar_plot(session, theta, R, values, az_max_bnd, el_max_bnd, plot_title, times_label, '_bands_'+band_labels[bnd], '', method, clip_label, figsave=False)
+            polar_plot(session, theta, R, values, az_max_bnd, el_max_bnd, plot_title, times_label, '_bands_'+band_labels[bnd], '', method, clip_range, figsave=figsave)
+    
 
-    elif channel_param == 'all':
-        
-        channel_list = np.arange(1, number_channels+2)       # Analyze all channels + return highest values over all
-        ch_last = channel_list[-1]
+    if 'per_channel' in channel_param:
+        # Run analysis for every single channel separately
+        channel_list = np.arange(1, number_channels+1)
         channel_state = 1
             
         for channel in channel_list:
-            # Initialize zero array and put the values at the provided Az & El indices, scaled onto the corresponding ranges (binning), for the selected channel:
-
             plot_title = ''
-
-            if channel == ch_last:
-                ch_label = 'all'
-                plot_title = f'Skyplot for {session}, over all frequencies (S and X bands): \n {freq_vector[x_count][1]} - {freq_vector[x_count][0]} MHz'
-                channel_values = np.zeros(n_samples)
-                for i in range(n_samples):
-                    channel_values[i] = method_func(values_channels_all[:,i])       # Get max/mean/median over all channels for each sample
-            else:
-                # Adjust band labels:
-                k = channel_state-1
-                while band_flags[k] == 0: 
-                    channel_state += 1
-                    k += 1
-                
-                if channel_state < 9: 
-                    ch_label = f'X-{channel_state}u'
-                    freq_interval = f'{freq_vector[channel-1][1]} - {freq_vector[channel][0]}'
-                elif lower_count == 2 and channel_state < 11: 
-                    ch_label = f'X-{sxL_IndexToChannel(channel_state-1)}l'
-                    if channel_state == 9: freq_interval = f'{freq_vector[0][1]} - {freq_vector[1][0]}'
-                    if channel_state == 10: freq_interval = f'{freq_vector[x_count-1][1]} - {freq_vector[x_count][0]}'
-                else: 
-                    ch_label = f'S-{channel_state-2}u'
-                    freq_interval = f'{freq_vector[channel-lower_count-1][1]} - {freq_vector[channel-lower_count][0]}'
-
+            # Adjust band labels:
+            k = channel_state-1
+            while band_flags[k] == 0: 
                 channel_state += 1
-                plot_title = f'Skyplot for {session}, channel {ch_label}: \n {freq_interval} MHz'
-                channel_values = values_channels_all[channel-1, :]
-        
-            values = np.zeros((len(abins), len(rbins)))
-            for i in range(n_samples):
-                az_index = int(round(azimuths[i]/6)) 
-                el_index = int(round(elevations[i]/3)) 
-                if az_index == 60: az_index = 0      # close circle
-                # Only consider the highest value at each position:
-                if channel_values[i] > values[az_index, el_index]:
-                    values[az_index, el_index] = channel_values[i]
+                k += 1
+                
+            if channel_state < 9: 
+                ch_label = f'X-{channel_state}u'
+                freq_interval = f'{freq_vector[channel-1][1]} - {freq_vector[channel][0]}'
+            elif lower_count == 2 and channel_state < 11: 
+                ch_label = f'X-{sxL_IndexToChannel(channel_state-1)}l'
+                if channel_state == 9: freq_interval = f'{freq_vector[0][1]} - {freq_vector[1][0]}'
+                if channel_state == 10: freq_interval = f'{freq_vector[x_count-1][1]} - {freq_vector[x_count][0]}'
+            else: 
+                ch_label = f'S-{channel_state-2}u'
+                freq_interval = f'{freq_vector[channel-lower_count-1][1]} - {freq_vector[channel-lower_count][0]}'
 
-            # Get the directions towards the highest value for the chosen channel:
-            max_index = np.unravel_index(np.argmax(values, axis=None), values.shape)
-            az_max_ch = np.radians(max_index[0]*6 + 3)
-            el_max_ch = max_index[1]*3 #+ 2
+            channel_state += 1
+            channel_values = values_channels_all[channel-1, :]
+            values, az_max_ch, el_max_ch = return_polar_values(azimuths, elevations, abins, rbins, channel_values)
+            if clipping: values = np.clip(values, a_min=clip_min, a_max=clip_max)
+            
+            plot_title = f'Skyplot for {session}, channel {ch_label}: \n {freq_interval} MHz'
+            polar_plot(session, theta, R, values, az_max_ch, el_max_ch, plot_title, times_label, '', '_'+ch_label, method, clip_range, figsave=figsave)
 
-            polar_plot(session, theta, R, values, az_max_ch, el_max_ch, plot_title, times_label, '', '_'+ch_label, method, clip_label, figsave=False)
+    if ('all' not in channel_param) and ('per_band' not in channel_param) and ('per_channel' not in channel_param):
+        raise ValueError(f"{channel_param} is not a valid input parameter for the S/X skyplots. Please use 'all', 'per_band' or 'per_channel'")
 
-    else:
-        raise ValueError(f"{channel_param} is not a valid input parameter for the S/X skyplots. Please use 'per_band' or 'all'")
+    if obs_map: load_map(session, observatory_location, az_max, el_max, f'{session}_map_{times_label}', figsave=figsave)   
 
-    # load_map(observatory_coordinates, az_max, el_max)
-   
 
-def sx_remove_peaks(sessionfile, lower=True):
-    # Remove calibration signals found at following given indices
-    # Input - sessionfile: One single dataset-file from the session, converted into an array
-
-    shape = sessionfile.shape   # (6400, 17)
-    sessionfile_filtered = sessionfile
-    # Indices for calibration bands to eliminate:
-    calibration_indices = (
-                        [505, 1005, 1505, 2005, 2505, 3005, 3505],       # upper channels
-                        [495, 995, 1495, 1995, 2495, 2995, 3495],            # lower channels
-                        [125, 625, 1125, 1625, 2125, 2625, 3125, 3625]   # all channels, if lower=False
-                        )
-    
-    # for i in range(1, shape[1]):
-    #     vec = sessionfile[:,i]
-    #     res = [idx for idx, val in enumerate(vec) if val > 8.5]
-    #     print(res)
-    
-    # Remove the peaks for the given indices:
-    for k in range(1,shape[1]):
-        if lower:
-            if k == 9 or k == 10:   calibration_peaks = calibration_indices[1]
-            else:   calibration_peaks = calibration_indices[0]
-        else:
-            calibration_peaks = calibration_indices[2]
-        for p in calibration_peaks:
-            sessionfile_filtered[p,k] = (sessionfile[p-1,k] + sessionfile[p+1,k]) / 2 # Replace peak with values close to it
-    return sessionfile_filtered
-
-def run_sx_analysis(session, doy_beginning, end_indicator, params, GNU_doy, method):
-    # Make list of requested files for a given session, beginning & end time
+def run_sx_analysis(session, doy_beginning, end_indicator, settings, add_params, method):
+    # Make list of requested files for a given session, beginning & end time, which then will be loaded it´nto a list
     # Remove calibration signals when loading the dataset
-    # Execute optional requests according to params - vector (GNU-plot, spectrograms, skyplot)
+    # Execute optional requests according to settings-vector (keep cal. signals, GNUplot, spectraplot, skyplot) and additional parameter-vector (GNUplot dates, skyplot clipping)
 
+    figsave = True    # save output figures
+    obs_map = True    # whether to visualize the skyplot on the map of the observatory
     files_path = get_session_path(session)
     
-    # Titles for the plots
-    freq_vector, band_flags = return_frequencies_sx(files_path+f'{session}wz.log')
+    freq_vector, band_flags = return_frequencies_sx(files_path+f'{session}wz.log')      # Allocation and frequencies parameter
 
     beginning = timeformat_files(doy_beginning)
-    print(f'\n Fetching S/X Data of session ...')
+    print(f'\n Fetching Legacy S/X Data of session ...')
 
     # Search for all files containing session name
     files = []
@@ -388,7 +344,6 @@ def run_sx_analysis(session, doy_beginning, end_indicator, params, GNU_doy, meth
         end = doy_end[10:18]
     else: 
         end = end_indicator
-    
     times_label = beginning[4:] + '-' + end[4:]
     
     # Shrink the list according to the user input
@@ -408,43 +363,44 @@ def run_sx_analysis(session, doy_beginning, end_indicator, params, GNU_doy, meth
             x_axis.append('')
 
     # Read the spec values from the single datasets, make a list out of them
-    # Remove calibration signals if param[0] is True:
+    # Remove calibration signals if settings[0] is True:
     datasets_list = []
     for i in range(len(interval)):
         f = np.loadtxt(files_path+interval[i])
-        if (params[0] is True): dataset = sx_remove_peaks(f, lower=band_flags[8]) 
+        if (settings[0] is True): dataset = remove_peaks_sx(f, lower=band_flags[8]) 
         else: dataset = f
         datasets_list.append(dataset)
 
     # GNU plots:
-    if (params[1] is True):
+    if (settings[1] is True):
+        GNU_doy = add_params[0]
         match = re.search(r'\d{4}\.\d{2}\.\d{2}\.\d{2}:\d{2}:\d{2}', GNU_doy)
         if match: 
             # Plot spectral frequencies at requested time:
             print(f' Plotting dataset at the time {GNU_doy}')
             GNU_time = timeformat_files(GNU_doy)
             gnu_index = files.index(f"{session}_wz_{GNU_time}_spec.out")
-            sx_gnuplot(datasets_list[gnu_index], session, GNU_doy, band_flags)
+            sx_gnuplot(datasets_list[gnu_index], session, GNU_doy, band_flags, figsave=figsave)
         elif GNU_doy == 'all': 
             # Plot all datasets
             print(f'Plotting all datasets for the selected timespan: {year}DOY{interval[0][10:13]}, {interval[0][14:16]}:{interval[0][16:18]}:00 - {interval[-1][14:16]}:{interval[-1][16:18]}:00')
             for i, dataset in enumerate(datasets_list):
                 GNU_doy_i = datetime.datetime.strptime(year + "-" + interval[i][10:13], "%Y-%j").strftime("%Y.%m.%d")
                 GNU_doy_i += f'.{interval[i][14:16]}:{interval[i][16:18]}:00' 
-                sx_gnuplot(dataset, session, GNU_doy_i, band_flags)
+                sx_gnuplot(dataset, session, GNU_doy_i, band_flags, figsave=figsave)
         else:
             raise ValueError('-GNUplot argument wrong. Please use format YYYY.MM.DD.hh:mm:ss, or `all`')
         
     # Plot spectrogram, if true
-    if (params[2] is True):
+    if (settings[2] is True):
         print(' Plotting spectrograms (X-band, S-band) of the session...')
-        sx_spectra_plot(datasets_list, session, band_flags, freq_vector, x_axis, times_label, method)
+        sx_spectra_plot(datasets_list, session, band_flags, freq_vector, x_axis, times_label, method, figsave=figsave)
 
     # Skyplot part:
-    if (params[3] is not None):
-        print(f' Plotting skyplot of the session...')
+    if (settings[3] is not None):
+        print(f' Plotting skyplots for the session...')
         start_id = interval[0][10:18]
         azimuths, elevations = get_summary_for_session(session, start_id, 'wz', len(datasets_list))
-        channel = params[3]    # choose channel here: el.[1,16]
-        clip_skyplot = params[4]
-        sx_sky_plot(session, azimuths, elevations, datasets_list, channel, times_label, band_flags, freq_vector, method, clip_skyplot)
+        channel = settings[3]    # choose channel here: el.[1,16]
+        clip_range = add_params[1]
+        sx_sky_plot(session, azimuths, elevations, datasets_list, channel, times_label, band_flags, freq_vector, method, clip_range, obs_map, figsave=figsave)
