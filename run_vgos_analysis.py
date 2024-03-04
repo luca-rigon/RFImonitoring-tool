@@ -162,11 +162,20 @@ def sky_plot(azimuths, elevations, datasets_list, session, band, channel_param, 
         for i in range(n_samples):
             values_channels_all[ch,i] = method_func(datasets_list[i][:,ch+1])
 
-    # Get the direction of the highest disturbances (i.e. get indices for highest values):
-    disturbance_index = np.unravel_index(np.argmax(values_channels_all, axis=None), (16,n_samples))
-    az_max = np.radians(azimuths[disturbance_index[1]])
-    el_max = elevations[disturbance_index[1]]
-    print(f' Highest disturbance {values_channels_all.max()} at ({azimuths[disturbance_index[1]]}, {elevations[disturbance_index[1]]}) - frequency channel {disturbance_index[0]+1}: {freq_vector[disturbance_index[0]%8][1]} - {freq_vector[disturbance_index[0]%8+1][0]}')
+    # Get the directions of the 5 highest disturbances (i.e. get indices for highest values):
+    n_dist = 5
+    all_vals_copy = values_channels_all.copy()
+    dist_indices = []
+    az_max_list = []
+    el_max_list = []
+
+    for _ in range(n_dist):
+        disturbance_index = np.unravel_index(np.argmax(all_vals_copy, axis=None), (number_channels,n_samples))
+        dist_indices.append(disturbance_index)
+        az_max_list.append(np.radians(azimuths[disturbance_index[1]]))
+        el_max_list.append(elevations[disturbance_index[1]])
+        all_vals_copy[disturbance_index[0], disturbance_index[1]] = 0
+    print(f' Highest disturbance {values_channels_all.max()} at ({azimuths[dist_indices[0][1]]}, {el_max_list[0]}) - frequency channel {dist_indices[0][0]+1}: {freq_vector[dist_indices[0][0]%8][1]} - {freq_vector[dist_indices[0][0]%8+1][0]}')
 
     # define binning
     abins = np.linspace(0,2*np.pi, 60)     # azimuth - angle; 1/6
@@ -207,7 +216,7 @@ def sky_plot(azimuths, elevations, datasets_list, session, band, channel_param, 
     if ('all' not in channel_param) and ('per_channel' not in channel_param):
         raise ValueError(f"{channel_param} is not a valid input parameter for the VGOS skyplots. Please use 'all', or 'per_channel'")
 
-    if obs_map: load_map(session, observatory_location, az_max, el_max, f'{session}_map_{times_label}_{band}', figsave=figsave)
+    if obs_map: load_map(observatory_location, az_max_list, el_max_list, f'RF-disturbances for session {session}, {observatory_location}; Band {band}', f'{save_session_path(session)}/{session}_map_{times_label}_{band}', figsave=figsave)
    
 
 def run_vgos_analysis(session, doy_beginning, end_indicator, spec, settings, add_params, method):
@@ -215,8 +224,8 @@ def run_vgos_analysis(session, doy_beginning, end_indicator, spec, settings, add
     # Remove calibration signals when loading the dataset
     # Execute optional requests according to settings-vector (keep cal. signals, GNUplot, spectraplot, skyplot) and additional parameter-vector (GNUplot dates, skyplot clipping)
 
-    figsave = True
-    obs_map = True      #whether to visualize the skyplot on the map of the observatory
+    figsave = True     # save output figures
+    obs_map = True      # whether to visualize the skyplot on the map of the observatory
     files_path = get_session_path(session)
 
     band, freq_vector = return_frequencies_vgos(spec)   # Band & frequency parameters

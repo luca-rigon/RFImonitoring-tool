@@ -210,22 +210,16 @@ def polar_plot(session, theta, R, values, az_max_ch, el_max_ch, plot_title, time
         plt.show()
 
 
-def load_map(session, location, azimuth, elevation, savepath, figsave=True):
+def load_map(location, azimuths, elevations, plot_title, savepath, figsave=True):
     # Visualize map (taken from OSM) of the observatory location with drawn directions towards the main disturbances
     # Inputs: - location name: default='Wettzell, Bad Kotzting'
-    #         - azimuth (radians), elevation (degrees): lists
+    #         - azimuths (radians), elevations (degrees): lists
 
     place = cx.Place(location, source=cx.providers.Thunderforest.Neighbourhood(apikey='29bd4f3cbd794bdfb03426605c9d98fd'), zoom=13)
     map_image = place.im
     (width, height, _) = map_image.shape
     scale = np.min([width,height])/2
     delta = scale/3
-
-    # Convert azimuth, elevation to cartesian coordinates (row,column):
-    r = elevation*scale/90          # scale radius: ->>> consider zoom-factor
-    theta = azimuth - np.pi/2
-    row = r*np.cos(theta)
-    col = r*np.sin(theta)
 
     # image center:
     row_0 = (height - 1) / 2
@@ -240,13 +234,20 @@ def load_map(session, location, azimuth, elevation, savepath, figsave=True):
     plt.annotate('S', (row_0-4.5, col_0+delta+15))
     plt.annotate('W', (row_0-delta-15, col_0+4.5))
     plt.annotate('E', (row_0+delta+4, col_0+4.5))
-    plt.arrow(row_0, col_0, row, col, width=2.5, head_width=8, color='red')
-    plt.annotate(str(round(azimuth*180/np.pi)) + '°', (row_0+row+8, col_0+col+8), bbox=dict(fc='white', edgecolor='white', alpha=0.5), color='red')
+    for i in range(len(azimuths)):
+        # Convert azimuth, elevation to cartesian coordinates (row,column):
+        r = elevations[i]*scale/90          # scale radius: ->>> consider zoom-factor
+        theta = azimuths[i] - np.pi/2
+        row = r*np.cos(theta)
+        col = r*np.sin(theta)
+        m = col/row
+        plt.arrow(row_0, col_0, row, col, width=2, head_width=6, color='red')
+        plt.annotate(str(round(azimuths[i]*180/np.pi)) + '°', (row_0+row+np.sign(row)*15, col_0+col+np.sign(col)*15), bbox=dict(fc='white', edgecolor='white', alpha=0.5), color='red')
     plt.axis('off')
-    plt.title(f'RF-disturbances for session {session}, {location}')
+    plt.title(plot_title)
     plt.text(0.05, 0.95, '© Thunderforest, © OpenStreetMap contributors', fontsize=8, ha='left', va='top', bbox=dict(facecolor='white', edgecolor='white', alpha=0.5))
     if figsave: 
-            plt.savefig(f'{save_session_path(session)}/{savepath}.png', dpi=300)
+            plt.savefig(f'{savepath}.png', dpi=300)
             plt.close()
     else:
         plt.show()

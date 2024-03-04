@@ -231,11 +231,20 @@ def sx_sky_plot(session, azimuths, elevations, datasets_list, channel_param, tim
                     if lower_count == 2 and i==14: break
                     s_count += 1
 
-    # Get the direction of the highest disturbances (i.e. get indices for highest values):
-    disturbance_index = np.unravel_index(np.argmax(values_channels_all, axis=None), (number_channels,n_samples))
-    az_max = np.radians(azimuths[disturbance_index[1]])
-    el_max = elevations[disturbance_index[1]]
-    print(f' Highest disturbance {values_channels_all.max()} at ({azimuths[disturbance_index[1]]}, {elevations[disturbance_index[1]]}) - frequency channel {disturbance_index[0]+1}: {freq_vector[disturbance_index[0]-lower_count][1]} - {freq_vector[disturbance_index[0]-lower_count+1][0]}')
+    # Get the directions of the 5 highest disturbances (i.e. get indices for highest values):
+    n_dist = 5
+    all_vals_copy = values_channels_all.copy()
+    dist_indices = []
+    az_max_list = []
+    el_max_list = []
+
+    for _ in range(n_dist):
+        disturbance_index = np.unravel_index(np.argmax(all_vals_copy, axis=None), (number_channels,n_samples))
+        dist_indices.append(disturbance_index)
+        az_max_list.append(np.radians(azimuths[disturbance_index[1]]))
+        el_max_list.append(elevations[disturbance_index[1]])
+        all_vals_copy[disturbance_index[0], disturbance_index[1]] = 0
+    print(f' Highest disturbance {values_channels_all.max()} at ({azimuths[dist_indices[0][1]]}, {el_max_list[0]}) - frequency channel {dist_indices[0][0]+1}: {freq_vector[dist_indices[0][0]-lower_count][1]} - {freq_vector[dist_indices[0][0]-lower_count+1][0]}')
 
     # define binning
     abins = np.linspace(0,2*np.pi, 60)     # azimuth - angle; 1/6
@@ -247,11 +256,11 @@ def sx_sky_plot(session, azimuths, elevations, datasets_list, channel_param, tim
         channel_values = np.zeros(n_samples)
         for i in range(n_samples):
             channel_values[i] = method_func(values_channels_all[:,i])       # Get max/mean/median over all channels for each sample
-        values, az_max_ch, el_max_ch = return_polar_values(azimuths, elevations, abins, rbins, channel_values)
+        values, az_max, el_max = return_polar_values(azimuths, elevations, abins, rbins, channel_values)
         if clipping: values = np.clip(values, a_min=clip_min, a_max=clip_max)
 
         plot_title = f'Skyplot for {session}, over all frequencies (S and X bands): \n {freq_vector[x_count][1]} - {freq_vector[x_count][0]} MHz'
-        polar_plot(session, theta, R, values, az_max_ch, el_max_ch, plot_title, times_label, '', '_all', method, clip_range, figsave=figsave)
+        polar_plot(session, theta, R, values, az_max, el_max, plot_title, times_label, '', '_all', method, clip_range, figsave=figsave)
 
     
     if 'per_band' in channel_param:
@@ -314,7 +323,7 @@ def sx_sky_plot(session, azimuths, elevations, datasets_list, channel_param, tim
     if ('all' not in channel_param) and ('per_band' not in channel_param) and ('per_channel' not in channel_param):
         raise ValueError(f"{channel_param} is not a valid input parameter for the S/X skyplots. Please use 'all', 'per_band' or 'per_channel'")
 
-    if obs_map: load_map(session, observatory_location, az_max, el_max, f'{session}_map_{times_label}', figsave=figsave)   
+    if obs_map: load_map(observatory_location, az_max_list, el_max_list, f'RF-disturbances for session {session}, {observatory_location}', f'{save_session_path(session)}/{session}_map_{times_label}', figsave=figsave)   
 
 
 def run_sx_analysis(session, doy_beginning, end_indicator, settings, add_params, method):
