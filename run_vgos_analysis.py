@@ -46,7 +46,7 @@ def vgos_gnuplot(dataset, session, time, band, figsave=True):
         plt.show()
 
 
-def spectra_plot(datasets_list, session, band, freq_vector, x_axis, times_label, method, figsave=True):
+def vgos_spectra_plot(datasets_list, session, band, freq_vector, x_axis, times_label, method, figsave=True):
     # Plot spectrograms for a given session over all selected datasets, listed in datasets_list, for all frequencies of the chosen band
     # Inputs: - freq_vector: list of frequency ranges within the band, in the required format for plotting
     #         - x_axis: x-axis label, in the required format for plotting
@@ -136,7 +136,7 @@ def spectra_plot(datasets_list, session, band, freq_vector, x_axis, times_label,
         else:
             plt.show()
 
-def sky_plot(azimuths, elevations, datasets_list, session, band, channel_param, times_label, freq_vector, method, clip_range, obs_map=False, figsave=True):
+def vgos_sky_plot(azimuths, elevations, datasets_list, session, band, channel_param, times_label, freq_vector, method, clip_range, obs_map=False, figsave=True):
     # Visualize skyplot of the datasets_list - files for given channels and corresponding list of azimuth and elevation data
     # Inputs: - channel_param: skyplot type chosen for visualization. Can be either 'per_channel', or 'all' for all taken together
     #         - times_label: session duration, as label for title
@@ -298,7 +298,7 @@ def run_vgos_analysis(session, doy_beginning, end_indicator, spec, settings, add
     # Plot spectrogram, if true
     if (settings[2] is True):
         print(' Plotting spectrograms (pol H and V) of the session...')
-        spectra_plot(datasets_list, session, band, freq_vector, x_axis, times_label, method, figsave=figsave)
+        vgos_spectra_plot(datasets_list, session, band, freq_vector, x_axis, times_label, method, figsave=figsave)
 
     # Skyplot part:
     if (settings[3] is not None):
@@ -307,4 +307,4 @@ def run_vgos_analysis(session, doy_beginning, end_indicator, spec, settings, add
         azimuths, elevations = get_summary_for_session(session, start_id, 'ws', len(datasets_list))
         channel = settings[3]    # choose channel here: el.[1,16]
         clip_range = add_params[1]
-        sky_plot(azimuths, elevations, datasets_list, session, band, channel, times_label, freq_vector, method, clip_range, obs_map, figsave=figsave)
+        vgos_sky_plot(azimuths, elevations, datasets_list, session, band, channel, times_label, freq_vector, method, clip_range, obs_map, figsave=figsave)
